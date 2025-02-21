@@ -56,12 +56,12 @@ export interface LogOptions {
   filename: string;
 }
 
-interface DocumentOptions {
+interface DocumentOptions<K extends string> {
   name: string;
   label?: string;
   description?: string;
   store: string;
-  fields: FieldArray;
+  fields: FieldArray<K>;
   url?: string;
   views?: string[];
 }
@@ -75,12 +75,12 @@ interface UploadOptions {
   listed?: boolean;
 }
 
-interface CollectionOptions {
+interface CollectionOptions<K extends string> {
   name: string;
   label?: string;
   description?: string;
   store: string;
-  fields: FieldArray;
+  fields: FieldArray<K>;
   url?: string;
   views?: string[];
   /** @deprecated. Use `documentName` instead */
@@ -99,16 +99,18 @@ const defaults = {
   basePath: "/",
 } satisfies CmsOptions;
 
-export default class Cms {
+export default class Cms<
+  FieldType extends string,
+> {
   #jsImports = new Set<string>();
 
   fetch: (request: Request) => Response | Promise<Response>;
   options: CmsOptions;
   storages = new Map<string, Storage | string>();
   uploads = new Map<string, UploadOptions>();
-  fields = new Map<string, FieldDefinition>();
-  collections = new Map<string, CollectionOptions>();
-  documents = new Map<string, DocumentOptions>();
+  fields = new Map<string, FieldDefinition<FieldType>>();
+  collections = new Map<string, CollectionOptions<FieldType>>();
+  documents = new Map<string, DocumentOptions<FieldType>>();
   versionManager: Versioning | undefined;
 
   constructor(options?: Partial<CmsOptions>) {
@@ -190,23 +192,25 @@ export default class Cms {
   }
 
   /** Add a new collection */
-  collection(options: CollectionOptions): this;
+  collection(
+    options: CollectionOptions<FieldType>,
+  ): this;
   collection(
     name: string,
     store: string,
-    fields: FieldArray,
+    fields: FieldArray<FieldType>,
   ): this;
   collection(
-    name: string | CollectionOptions,
+    name: string | CollectionOptions<FieldType>,
     store?: string,
-    fields?: FieldArray,
+    fields?: FieldArray<FieldType>,
   ): this {
     const options = typeof name === "string"
       ? {
         name,
         store,
         fields,
-      } as CollectionOptions
+      } as CollectionOptions<FieldType>
       : name;
 
     if (!options.description) {
@@ -226,25 +230,25 @@ export default class Cms {
 
   /** Add a new document */
   document(
-    options: DocumentOptions,
+    options: DocumentOptions<FieldType>,
   ): this;
   document(
     name: string,
     store: string,
-    fields: FieldArray,
+    fields: FieldArray<FieldType>,
   ): this;
   document(
-    name: string | DocumentOptions,
+    name: string | DocumentOptions<FieldType>,
     store?: string,
-    fields?: FieldArray,
+    fields?: FieldArray<FieldType>,
   ): this {
     const options = typeof name === "string"
       ? {
         name,
         store,
         fields,
-      } as DocumentOptions
-      : name as DocumentOptions;
+      } as DocumentOptions<FieldType>
+      : name as DocumentOptions<FieldType>;
 
     if (!options.description) {
       const [name, description] = options.name.split(":").map((part) =>
@@ -259,20 +263,31 @@ export default class Cms {
   }
 
   /** Add a new field type */
-  field(name: string, field: FieldDefinition): this {
-    this.fields.set(name, field);
-    return this;
+  field<T extends string>(
+    name: T,
+    field: FieldDefinition<T>,
+  ): Cms<FieldType | T> {
+    this.fields.set(name, field as unknown as FieldDefinition<FieldType>);
+    return this as unknown as Cms<FieldType | T>;
   }
 
   /** Use a plugin */
-  use(plugin: (cms: Cms) => void): this {
-    plugin(this);
-    return this;
+  use<K extends string = never>(
+    plugin:
+      | ((cms: Cms<FieldType>) => void)
+      | ((cms: Cms<FieldType>) => Cms<FieldType | K>),
+  ): ReturnType<typeof plugin> extends void ? Cms<FieldType>
+    : Cms<FieldType | K> {
+    const result = plugin(this);
+    if (result) {
+      return result;
+    }
+    return this as unknown as Cms<FieldType | K>;
   }
 
   /** Initialize the CMS */
-  initContent(): CMSContent {
-    const content: CMSContent = {
+  initContent(): CMSContent<FieldType> {
+    const content: CMSContent<FieldType> = {
       basePath: this.options.basePath,
       auth: this.options.auth?.method === "basic",
       site: this.options.site!,
@@ -309,7 +324,7 @@ export default class Cms {
       content.collections[name] = new Collection({
         storage: this.#getStorage(store),
         fields: this.#resolveFields(
-          fields satisfies (MergedField | string)[],
+          fields as (MergedField<FieldType> | string)[],
           content,
         ),
         name,
@@ -328,7 +343,7 @@ export default class Cms {
       content.documents[name] = new Document({
         entry: this.#getEntry(store),
         fields: this.#resolveFields(
-          fields satisfies (MergedField | string)[],
+          fields as (MergedField<FieldType> | string)[],
           content,
         ),
         name,
@@ -507,9 +522,9 @@ export default class Cms {
   }
 
   #resolveFields(
-    fields: (MergedField | string)[],
-    content: CMSContent,
-  ): ResolvedField[] {
+    fields: (MergedField<FieldType> | string)[],
+    content: CMSContent<FieldType>,
+  ): ResolvedField<FieldType>[] {
     return fields
       .map((field) => {
         if (typeof field !== "string") {
@@ -520,17 +535,19 @@ export default class Cms {
         if (required) {
           return {
             name,
-            type: type.slice(0, -1),
+            type: type.slice(0, -1) as FieldType,
             attributes: { required: true },
-          } satisfies MergedField;
+          } satisfies MergedField<FieldType>;
         } else {
           return {
             name,
-            type: (type ?? "text"),
-          } satisfies MergedField;
+            type: (type ?? "text") as FieldType,
+          } satisfies MergedField<
+            FieldType
+          >;
         }
       })
-      .map((field): ResolvedField => {
+      .map((field): ResolvedField<FieldType> => {
         const type = this.fields.get(field.type);
 
         if (!type) {
@@ -542,7 +559,7 @@ export default class Cms {
           label: field.label ?? labelify(field.name),
           applyChanges: type.applyChanges,
           ...field,
-        } as ResolvedField;
+        } as ResolvedField<FieldType>;
 
         if (type.init) {
           type.init(resolvedField, content);
@@ -550,7 +567,7 @@ export default class Cms {
 
         if (field.fields) {
           resolvedField.fields = this.#resolveFields(
-            field.fields as (MergedField | string)[],
+            field.fields as (MergedField<FieldType> | string)[],
             content,
           );
         }
