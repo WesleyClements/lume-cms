@@ -1,3 +1,4 @@
+import type Site from "lume/core/site.ts";
 import { Hono, HTTPException, serveStatic } from "../deps/hono.ts";
 import layout from "./templates/layout.ts";
 import documentRoutes from "./routes/document.ts";
@@ -263,12 +264,15 @@ export default class Cms {
   }
 
   /** Initialize the CMS */
-  initContent(): CMSContent {
+  initContent(site?: Site): CMSContent {
     const content: CMSContent = {
       basePath: this.options.basePath,
       auth: this.options.auth?.method === "basic",
       site: this.options.site!,
-      data: this.options.data ?? {},
+      data: {
+        ...this.options.data,
+        site: site ?? undefined,
+      },
       collections: {},
       documents: {},
       uploads: {},
@@ -327,8 +331,8 @@ export default class Cms {
   }
 
   /** Start the CMS */
-  init(): Hono {
-    const content = this.initContent();
+  init(site?: Site): Hono {
+    const content = this.initContent(site);
 
     for (const type of this.fields.values()) {
       this.#jsImports.add(type.jsImport);

@@ -1,6 +1,7 @@
 import type Collection from "./core/collection.ts";
 import type Document from "./core/document.ts";
 import type Upload from "./core/upload.ts";
+import type Site from "lume/core/site.ts";
 
 /** Generic data to store */
 export type Data = Record<string, unknown>;
@@ -193,7 +194,10 @@ export interface CMSContent {
   documents: Record<string, Document>;
   uploads: Record<string, Upload>;
   versioning?: Versioning;
-  data: Record<string, unknown>;
+  data: {
+    site?: Site;
+    [key: string]: unknown;
+  };
 }
 
 declare global {

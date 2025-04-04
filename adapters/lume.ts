@@ -4,11 +4,11 @@ import { dispatch } from "../core/utils/event.ts";
 import { asset, getPath } from "../core/utils/path.ts";
 import { Git, Options as GitOptions } from "../core/git.ts";
 import { relative } from "../deps/std.ts";
+import type Site from "lume/core/site.ts";
 import type Cms from "../core/cms.ts";
 
 export interface Options {
-  // deno-lint-ignore no-explicit-any
-  site: any;
+  site: Site;
   cms: Cms;
   basePath?: string;
 }
@@ -25,6 +25,10 @@ export default async function lume(userOptions?: Options): Promise<Hono> {
 
   if (!cms) {
     throw new TypeError("CMS instance is required.");
+  }
+
+  if (!site) {
+    throw new TypeError("Site instance is required.");
   }
 
   // Enable drafts previews in the CMS
@@ -61,9 +65,22 @@ export default async function lume(userOptions?: Options): Promise<Hono> {
   cms.storage("src");
   cms.options.basePath = basePath;
   cms.options.root = site.src();
-  const data = cms.options.data ?? {};
-  data.site = site;
-  cms.options.data = data;
+
+  const getPreviewUrl = (src: string): string | undefined => {
+    for (const page of site.pages) {
+      if (page.src.entry?.src === src) {
+        return page.outputPath;
+      }
+    }
+  };
+
+  const getSourceFile = (url: string): string | undefined => {
+    for (const page of site.pages) {
+      if (page.data.url === url) {
+        return page.src.entry?.src;
+      }
+    }
+  };
 
   addEventListener("cms:previewUrl", (e) => {
     // @ts-ignore: Detail declared in the event.
@@ -75,23 +92,7 @@ export default async function lume(userOptions?: Options): Promise<Hono> {
     e.detail.src = getSourceFile(e.detail.url);
   });
 
-  function getPreviewUrl(src: string): string | undefined {
-    for (const page of site.pages) {
-      if (page.src.entry?.src === src) {
-        return page.outputPath;
-      }
-    }
-  }
-
-  function getSourceFile(url: string): string | undefined {
-    for (const page of site.pages) {
-      if (page.data.url === url) {
-        return page.src.entry?.src;
-      }
-    }
-  }
-
-  const app = cms.init();
+  const app = cms.init(site);
   const previewer = new Hono({
     strict: false,
   });
